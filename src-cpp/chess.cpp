@@ -247,7 +247,7 @@ public:
     }
 };
 
-class Validate : public Data { // ESSENTIAL PART, OPTIMISATION REQUIRED ESPECIALLY ON HASHMAP.H LIB
+class Validate : public Data {
 public:
     Validate() {
         printf("PLACEHOLDER\n");
@@ -467,7 +467,7 @@ public:
 int main() {
     Board board;
     
-    board._interface("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 6500, 6500);
+    board._interface("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 8, 8);
     
     Move eng;
     while(1) {
