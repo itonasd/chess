@@ -291,7 +291,6 @@ protected:
                 int targetrow = row + rowOffsets;
                 int targetcol = col + colOffsets;
                 
-                printf("TARGET = %d %d\n", targetrow, targetcol);
                 if (targetrow < 0 || targetrow >= md.metadata[0] || targetcol < 0 || targetcol >= md.metadata[1]) {
                     break;
                 }
