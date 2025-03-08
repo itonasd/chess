@@ -2,13 +2,12 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
-#include <windows.h>
+#include <time.h>
 
 #include <vector>
 #include <array>
 #include <algorithm>
 
-#include "hashmap.h"
 #include "utils.h"
 
 using namespace std;
@@ -76,7 +75,6 @@ public:
 protected:
     struct MainData {
         int ****board;
-        hashmap_t ***board_data;
         vector<array<int, 2>> ***move_predictions;
         int *metadata;
         int **logdata[2] = { 0x0, 0x0 };
@@ -109,15 +107,6 @@ private:
             }
         }
 
-        md->board_data = (hashmap_t***) malloc(row * sizeof(hashmap_t**));
-
-        for (int i = 0; i < row; i++) {
-            md->board_data[i] = (hashmap_t**) malloc(col * sizeof(hashmap_t*));
-            for (int j = 0; j < col; j++) {
-                md->board_data[i][j] = (hashmap_t*) malloc(8 * sizeof(hashmap_t));
-            }
-        }
-
         md->move_predictions = new vector<array<int, 2>>**[row];
 
         for (int i = 0 ; i < row; i++) {
@@ -140,24 +129,6 @@ private:
                 md->board[i][j][0][2] = row + 1;
             }
             row--;
-        }
-    }
-
-    void edgecount(MainData *md) {
-        for (int i = md->metadata[0] - 1; i >= 0; i--) {
-            for (int j = 0; j < md->metadata[1]; j++) {
-                int east = (md->metadata[1] - 1) - j;
-                int west = j;
-                int south = (md->metadata[0] - 1) - i;
-                int north = i;
-
-                int cache[8] = {north, south, west, east, mathmin(north, west), mathmin(south, east), mathmin(north, east), mathmin(south, west)};
-
-                for (int k = 0; k < 8; k++) {
-                    md->board_data[i][j][k].key = k;
-                    md->board_data[i][j][k].val = cache[k];
-                }
-            }
         }
     }
 
@@ -218,18 +189,15 @@ private:
                 free(md->board[i][j][2]);
                 free(md->board[i][j]);
 
-                free(md->board_data[i][j]);
                 delete md->move_predictions[i][j]; 
             }
             free(md->board[i]);
             
-            free(md->board_data[i]);
             delete[] md->move_predictions[i]; 
         }
         free(md->board);
         free(md->metadata);
 
-        free(md->board_data);
         delete[] md->move_predictions;
     }
 
@@ -263,7 +231,6 @@ public:
 
         allocate(&md, row, col);
         initalize(&md);
-        edgecount(&md);
         insertpieces(&md, type);
         boardState = 0;
 
@@ -291,10 +258,14 @@ public:
     }
 
 protected:
-    hashmap_t directions[8] = {
-        {0, md.metadata[0]}, {1, -(md.metadata[0])}, {2, -1}, {3, 1}, {4, (md.metadata[0] - 1)}, 
-        {5, -(md.metadata[0] - 1)}, {6, (md.metadata[0] + 1)}, {7, -(md.metadata[0] + 1)}
-    };
+    array<array<int, 2>, 8> directions = {{
+        {0, 1}, {0, -1}, {-1, 0}, {1, 0}, // rook dir
+        {-1, 1}, {1, -1}, {1, 1}, {-1, -1} // bishop dir
+    }}; // merge to queeeen
+
+    array<array<int, 2>, 8> knightDirections = {{
+        { -2, -1 }, { -1, -2 }, { 1, -2 }, {2, -1}, {2, 1}, {1, 2}, {-1, 2}, {-2, 1}
+    }};
 
     vector<array<int, 2>> qrb(int row, int col) {
         int **curPiece = md.board[row][col];
@@ -305,12 +276,25 @@ protected:
         vector<array<int, 2>> cache;
         
         for (int dirIndx = stDirIndx; dirIndx < enDirIndx; dirIndx++) {
-            
-            for (int i = 0; i < hashmap_pairs(directions, md.board_data[row][col], 8, dirIndx); i++) {
-                int targetrow = row_revert((curPiece[0][0] + directions[dirIndx].val * (i + 1)) / md.metadata[0], md.metadata[0]);
-                
-                int targetcol = (curPiece[0][0] + directions[dirIndx].val * (i + 1)) % md.metadata[1];
+            int rowOffsets = directions[dirIndx][0];
+            int colOffsets = directions[dirIndx][1];
 
+            for (int i = 0;;i++) {
+
+                if (i) {
+                    if (dirIndx == 0 || dirIndx == 4 || dirIndx == 6) colOffsets += 1;
+                    if (dirIndx == 1 || dirIndx == 5 || dirIndx == 7) colOffsets -= 1;
+                    if (dirIndx == 2 || dirIndx == 4 || dirIndx == 7) rowOffsets -= 1;
+                    if (dirIndx == 3 || dirIndx == 5 || dirIndx == 6) rowOffsets += 1;
+                }
+
+                int targetrow = row + rowOffsets;
+                int targetcol = col + colOffsets;
+                
+                printf("TARGET = %d %d\n", targetrow, targetcol);
+                if (targetrow < 0 || targetrow >= md.metadata[0] || targetcol < 0 || targetcol >= md.metadata[1]) {
+                    break;
+                }
                 if (md.board[targetrow][targetcol][2][2] == allyColor) break;
                 
                 array<int, 2> vcache = { targetrow, targetcol };
@@ -328,15 +312,18 @@ protected:
         int allyColor = (curPiece[2][2] == 8) ? 8 : 16;
         vector<array<int, 2>> cache;
         
-        for (int dirIndx = 0; dirIndx < 8; dirIndx++) {
-            if (hashmap_pairs(directions, md.board_data[row][col], 8, dirIndx) > 0) {
-                int targetrow = row_revert((curPiece[0][0] + directions[dirIndx].val) / md.metadata[0], md.metadata[0]);
-                int targetcol = (curPiece[0][0] + directions[dirIndx].val) % md.metadata[1];
-                if (md.board[targetrow][targetcol][2][2] == allyColor) continue;
-                
-                array<int, 2> vcache = { targetrow, targetcol };
-                cache.push_back(vcache);
-            }
+        for (int i = 0; i < 8; i++) {
+            int rowOffsets = directions[i][0];
+            int colOffsets = directions[i][1];
+
+            int targetrow = row + rowOffsets;
+            int targetcol = col + colOffsets;
+
+            if (targetrow < 0 || targetrow >= md.metadata[0] || targetcol < 0 || targetcol >= md.metadata[1]) continue;
+            if (md.board[targetrow][targetcol][2][2] == allyColor) continue;
+
+            array<int, 2> vcache = { targetrow, targetcol };
+            cache.push_back(vcache);
         }
 
         // castling
@@ -348,13 +335,10 @@ protected:
         int **curPiece = md.board[row][col];
         int allyColor = (curPiece[2][2] == 8) ? 8 : 16;
         vector<array<int, 2>> cache;
-        array<array<int, 2>, 8> knightDirections = {{
-            { -2, -1 }, { -1, -2 }, { 1, -2 }, {2, -1}, {2, 1}, {1, 2}, {-1, 2}, {-2, 1}
-        }};
 
         for (int i = 0; i < 8; i++) {
-            int rowOffsets = knightDirections[i][0];
-            int colOffsets = knightDirections[i][1];
+            int rowOffsets = knightDirections[i][1];
+            int colOffsets = knightDirections[i][0];
 
             int targetrow = row + rowOffsets;
             int targetcol = col + colOffsets;
@@ -480,45 +464,32 @@ public:
 
 };
 
-void enableANSI() {
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    GetConsoleMode(hOut, &dwMode);
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(hOut, dwMode);
-}
-
 int main() {
-    enableANSI();
     Board board;
     
-    board._interface("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 8, 8);
+    board._interface("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 6500, 6500);
     
     Move eng;
-
     while(1) {
         eng.generate();
+        system("clear");
         board.log_board();
-        
-        if (board.md.logdata[1]) {
-            printf("    Previous Move: %c%d -> %c%d\n", board.md.logdata[0][0][1], board.md.logdata[0][0][2], board.md.logdata[1][0][1], board.md.logdata[1][0][2]);
-        } else if (!board.md.logdata[0]) printf("    Move to start.\n");
-        else printf("    Invalid Move.\n");
+            
+            if (board.md.logdata[1]) {
+                printf("    Previous Move: %c%d -> %c%d\n", board.md.logdata[0][0][1], board.md.logdata[0][0][2], board.md.logdata[1][0][1], board.md.logdata[1][0][2]);
+            } else if (!board.md.logdata[0]) printf("    Move to start.\n");
+            else printf("    Invalid Move.\n");
 
-        int numcur, numtar; 
-        char chacur, chatar;
-        
-        scanf("%c%d %c%d", &chacur, &numcur, &chatar, &numtar);
+            int numcur, numtar; 
+            char chacur, chatar;
+            
+            scanf("%c%d %c%d", &chacur, &numcur, &chatar, &numtar);
 
-        int cur = ((numcur -1) * board.md.metadata[0]) + (chacur - 65);
-        int tar = ((numtar -1) * board.md.metadata[1]) + (chatar - 65);
+            int cur = ((numcur -1) * board.md.metadata[0]) + (chacur - 65);
+            int tar = ((numtar -1) * board.md.metadata[1]) + (chatar - 65);
 
-        eng.move(cur, tar);
-
-        for (int i = 0; i < 40; i++) {
-            printf("\033[A\033[2K");
+            eng.move(cur, tar);
         }
-    }
     
     return 0;
 }
